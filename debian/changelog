@@ -1,0 +1,31 @@
+capi-network-wifi-direct (0.0.1-4) unstable; urgency=low
+
+  * Add dependent package of dev package
+  * Git: api/wifi-direct
+  * Tag: capi-network-wifi-direct_0.0.1-4
+
+ -- ByungWoo Lee <bw1212.lee@samsung.com>  Fri, 30 Mar 2012 11:31:10 +0900
+
+capi-network-wifi-direct (0.0.1-3) unstable; urgency=low
+
+  * Modified build script for dependent package
+  * Git: api/wifi-direct
+  * Tag: capi-network-wifi-direct_0.0.1-3
+
+ -- Sungsik Jang <sungsik.jang@samsung.com>  Wed, 21 Mar 2012 17:09:14 +0900
+
+capi-network-wifi-direct (0.0.1-2) unstable; urgency=low
+
+  * Modified build script for dependent package
+  * Git: api/wifi-direct
+  * Tag: capi-network-wifi-direct_0.0.1-2
+
+ -- Sungsik Jang <sungsik.jang@samsung.com>  Tue, 20 Mar 2012 14:36:49 +0900
+
+capi-network-wifi-direct (0.0.1-1) unstable; urgency=low
+
+  * Initial upload : WiFi-Direct API
+  * Git: api/wifi-direct
+  * Tag: capi-network-wifi-direct_0.0.1-1
+
+ -- Sungsik Jang <sungsik.jang@samsung.com>  Fri, 17 Feb 2012 16:33:16 +0900
