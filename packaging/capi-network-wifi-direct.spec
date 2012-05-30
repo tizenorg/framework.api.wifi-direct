@@ -5,6 +5,7 @@ Release:    3
 Group:      TO_BE_FILLED
 License:    TO_BE_FILLED
 Source0:    %{name}-%{version}.tar.gz
+Source1001: packaging/capi-network-wifi-direct.manifest 
 BuildRequires:  pkgconfig(dbus-glib-1)
 BuildRequires:  pkgconfig(dlog)
 BuildRequires:  pkgconfig(vconf)
@@ -29,6 +30,7 @@ WiFi-Direct library (Shared Library) (Developement)
 %setup -q
 
 %build
+cp %{SOURCE1001} .
 cmake . -DCMAKE_INSTALL_PREFIX=%{_prefix}
 make %{?jobs:-j%jobs}
 
@@ -41,6 +43,7 @@ rm -rf %{buildroot}
 %postun
 
 %files devel 
+%manifest capi-network-wifi-direct.manifest
 %defattr(-,root,root,-)
 %{_libdir}/pkgconfig/*.pc
 %{_includedir}/*/*.h
