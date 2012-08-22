@@ -10,7 +10,7 @@ SET(INC_DIR include)
 INCLUDE_DIRECTORIES(${INC_DIR})
 
 SET(dependents "capi-base-common")
-SET(pc_dependents "capi-base-common wifi-direct")
+SET(pc_dependents "capi-base-common")
 
 INCLUDE(FindPkgConfig)
 pkg_check_modules(${fw_name} REQUIRED ${dependents})

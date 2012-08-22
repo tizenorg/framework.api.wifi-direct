@@ -1,14 +1,15 @@
 Name:       capi-network-wifi-direct
 Summary:    Network WiFi-Direct library in Tizen CAPI
-Version: 0.0.1
-Release:    3
+Version: 0.0.4
+Release:    5
 Group:      TO_BE_FILLED
 License:    TO_BE_FILLED
 Source0:    %{name}-%{version}.tar.gz
+Requires(post): /sbin/ldconfig
+Requires(postun): /sbin/ldconfig
 BuildRequires:  pkgconfig(dbus-glib-1)
 BuildRequires:  pkgconfig(dlog)
 BuildRequires:  pkgconfig(vconf)
-BuildRequires:  pkgconfig(wifi-direct)
 BuildRequires:  pkgconfig(capi-base-common)
 BuildRequires:  cmake
 
@@ -19,9 +20,8 @@ BuildRequires:  cmake
 %package devel 
 Summary:    WiFi-Direct library (Shared Library) (Developement)
 Group:      TO_BE_FILLED 
-Requires:  pkgconfig(capi-base-common)
-Requires:  pkgconfig(wifi-direct)
-
+Requires: capi-base-common-devel
+BuildRequires:  pkgconfig(wifi-direct)
 %description devel
 WiFi-Direct library (Shared Library) (Developement)
 
@@ -40,7 +40,10 @@ rm -rf %{buildroot}
 
 %postun
 
+%files
+
 %files devel 
 %defattr(-,root,root,-)
 %{_libdir}/pkgconfig/*.pc
 %{_includedir}/*/*.h
+
