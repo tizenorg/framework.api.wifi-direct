@@ -1,0 +1,12 @@
+prefix=@prefix@
+exec_prefix=@prefix@
+libdir=@prefix@/lib
+includedir=@prefix@/include
+features=@FEATURES@
+
+Name: wifi-direct
+Description: Wi-Fi Direct Library 
+Version: @VERSION@
+Libs: -L${libdir} -lwifi-direct
+Cflags: -I${includedir} -I${includedir}/wifi-direct ${features}
+
