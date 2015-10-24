@@ -11,3 +11,4 @@ SET(dependents "capi-base-common")
 SET(pc_dependents "capi-base-common")
 
 ADD_SUBDIRECTORY(src)
+#ADD_SUBDIRECTORY(test)

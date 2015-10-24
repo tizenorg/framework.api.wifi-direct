@@ -1,6 +1,6 @@
 Name:       capi-network-wifi-direct
 Summary:    Network WiFi-Direct library in Tizen CAPI
-Version:    1.2.32
+Version:    1.2.45
 Release:    1
 Group:      Connectivity/Wireless
 License:    Apache-2.0
@@ -26,6 +26,16 @@ Requires: capi-base-common-devel
 %description devel
 WiFi-Direct library (Shared Library) (Developement)
 
+#%description
+
+#%package -n test-wifi-direct
+#Summary:    Test Application for Wi-Fi Direct
+#Group:      TO_BE_FILLED
+#Requires:   %{name} = %{version}-%{release}
+
+#%description -n test-wifi-direct
+#Test Application for Wi-Fi Direct
+
 %prep
 %setup -q
 
@@ -45,17 +55,23 @@ cmake -DCMAKE_INSTALL_PREFIX=%{_prefix} \
 %if "%{?tizen_profile_name}" == "wearable"
 	-DTIZEN_FEATURE_SERVICE_DISCOVERY=0 \
 	-DTIZEN_FEATURE_WIFI_DISPLAY=0 \
-%elseif "%{?tizen_profile_name}" == "mobile"
+%else
+%if "%{?tizen_profile_name}" == "mobile"
 	-DTIZEN_FEATURE_SERVICE_DISCOVERY=1 \
 	-DTIZEN_FEATURE_WIFI_DISPLAY=1 \
+%else
+%if "%{?tizen_profile_name}" == "tv"
+	-DTIZEN_FEATURE_SERVICE_DISCOVERY=1 \
+	-DTIZEN_FEATURE_WIFI_DISPLAY=1 \
+	-DTIZEN_TV=1 \
 %endif
-	.
+%endif
+%endif
 
 make %{?jobs:-j%jobs}
 %install
 rm -rf %{buildroot}
 %make_install
-#%__strip %{buildroot}%{_libdir}/libwifi-direct.so.0.0
 
 mkdir -p %{buildroot}/usr/share/license
 cp %{_builddir}/%{buildsubdir}/LICENSE.APLv2 %{buildroot}/usr/share/license/%{name}
@@ -77,3 +93,9 @@ cp %{_builddir}/%{buildsubdir}/LICENSE.APLv2 %{buildroot}/usr/share/license/%{na
 %defattr(-,root,root,-)
 %{_libdir}/pkgconfig/capi-network-wifi-direct.pc
 %{_includedir}/wifi-direct/wifi-direct.h
+%{_includedir}/wifi-direct/wifi-direct-internal.h
+
+#%files -n test-wifi-direct
+#%manifest test-wifi-direct.manifest
+#%defattr(4755,app,app,4755)
+#%{_bindir}/test-wifi-direct

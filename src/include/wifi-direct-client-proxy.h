@@ -35,7 +35,8 @@
 #define WDC_LOGE(format, args...) LOGE(format, ##args)
 #define WDC_LOGF(format, args...) LOGF(format, ##args)
 
-#define WDC_SECLOG(format, args...) SECURE_LOG(LOG_INFO, LOG_TAG, format, ##args)
+#define WDC_SECLOGI(format, args...) SECURE_LOG(LOG_INFO, LOG_TAG, format, ##args)
+#define WDC_SECLOGD(format, args...) SECURE_LOG(LOG_DEBUG, LOG_TAG, format, ##args)
 
 #define __WDC_LOG_FUNC_START__ LOGV("Enter")
 #define __WDC_LOG_FUNC_END__ LOGV("Quit")
@@ -52,7 +53,8 @@
 #define __WDC_LOG_FUNC_START__
 #define __WDC_LOG_FUNC_END__
 
-#define WDC_SECLOG(format, args...)
+#define WDC_SECLOGI(format, args...)
+#define WDC_SECLOGD(format, args...)
 
 #endif /** _DLOG_UTIL */
 
@@ -63,10 +65,35 @@
 #define DBUS_REPLY_TIMEOUT (120 * 1000)
 
 #define SOCK_FD_MIN 3
+#define WIFI_DIRECT_WPA_LEN 64
 #define MACSTR_LEN 18
 #define MACADDR_LEN 6
 #define IPSTR_LEN 16
 #define WFD_SOCK_FILE_PATH "/tmp/wfd_client_socket"
+
+#define WIFIDIRECT_FEATURE 						"http://tizen.org/feature/network.wifi.direct"
+#define WIFIDIRECT_DISPLAY_FEATURE 				"http://tizen.org/feature/network.wifi.direct.display"
+#define WIFIDIRECT_SERVICE_DISCOVERY_FEATURE 	"http://tizen.org/feature/network.wifi.direct.service_discovery"
+
+#if !defined TIZEN_TV
+#define CHECK_FEATURE_SUPPORTED(feature_name)\
+	do {\
+		bool feature_supported = FALSE;\
+		if(!system_info_get_platform_bool(feature_name, &feature_supported)){\
+			if(feature_supported == FALSE){\
+				LOGE("%s feature is disabled", feature_name);\
+				return WIFI_DIRECT_ERROR_NOT_SUPPORTED;\
+			}\
+		} else {\
+			LOGE("Error - Feature getting from System Info");\
+			return WIFI_DIRECT_ERROR_OPERATION_FAILED;\
+		}\
+	}while(0)
+
+#else
+#define CHECK_FEATURE_SUPPORTED(feature_name)
+#endif
+
 typedef struct
 {
 	bool is_registered;

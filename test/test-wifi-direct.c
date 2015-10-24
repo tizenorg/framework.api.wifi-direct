@@ -3,11 +3,17 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
+#include <time.h>
+#include <assert.h>
 
 #include <glib.h>
 #include <glib-object.h>
 
 #include <wifi-direct.h>
+
+#define RESET_COLOR "\e[m"
+#define MAKE_RED "\e[31m"
+#define MAKE_GREEN "\e[32m"
 
 #define __FUNC_ENTER__ printf("%s() entering...\n", __func__)
 #define __FUNC_EXIT__ printf("%s() leaving...\n", __func__)
@@ -16,6 +22,47 @@
 #define MACSTR "%02x:%02x:%02x:%02x:%02x:%02x"
 
 #define MAX_PEER_NUM 10
+
+static const char *test_wfd_convert_error_to_string(wifi_direct_error_e err_type)
+{
+	switch (err_type) {
+	case WIFI_DIRECT_ERROR_NONE:
+		return "NONE";
+	case WIFI_DIRECT_ERROR_NOT_PERMITTED:
+		return "NOT_PERMITTED";
+	case WIFI_DIRECT_ERROR_OUT_OF_MEMORY:
+		return "OUT_OF_MEMORY";
+	case WIFI_DIRECT_ERROR_RESOURCE_BUSY:
+		return "RESOURCE_BUSY";
+	case WIFI_DIRECT_ERROR_INVALID_PARAMETER:
+		return "INVALID_PARAMETER";
+	case WIFI_DIRECT_ERROR_CONNECTION_TIME_OUT:
+		return "CONNECTION_TIME_OUT";
+	case WIFI_DIRECT_ERROR_NOT_INITIALIZED:
+		return "NOT_INITIALIZED";
+	case WIFI_DIRECT_ERROR_COMMUNICATION_FAILED:
+		return "COMMUNICATION_FAILED";
+	case WIFI_DIRECT_ERROR_WIFI_USED:
+		return "WIFI_USED";
+	case WIFI_DIRECT_ERROR_MOBILE_AP_USED:
+		return "MOBILE_AP_USED";
+	case WIFI_DIRECT_ERROR_CONNECTION_FAILED:
+		return "CONNECTION_FAILED";
+	case WIFI_DIRECT_ERROR_AUTH_FAILED:
+		return "AUTH_FAILED";
+	case WIFI_DIRECT_ERROR_OPERATION_FAILED:
+		return "OPERATION_FAILED";
+	case WIFI_DIRECT_ERROR_TOO_MANY_CLIENT:
+		return "TOO_MANY_CLIENT";
+	case WIFI_DIRECT_ERROR_ALREADY_INITIALIZED:
+		return "ALREADY_INITIALIZED";
+	case WIFI_DIRECT_ERROR_CONNECTION_CANCELED:
+		return "CONNECTION_CANCELED";
+	default:
+		return "UNKNOWN";
+	}
+	return "UNKNOWN";
+}
 
 enum
 {
@@ -33,14 +80,18 @@ enum
 	CMD_SEND_CONNECTION_REQ,
 	CMD_GET_LINK_STATUS,
 	CMD_CONNECT_PEER,
+	CMD_CANCEL_CONNECTION,
 	CMD_DISCONNECT_ALL,
 	CMD_DISCONNECT,
 
 	CMD_ENABLE_PUSH_BUTTON,
 	CMD_CREATE_GROUP,
 	CMD_CANCEL_GROUP,
+	CMD_IS_GROUP_OWNER,
 	CMD_REJECT,
 	CMD_INVITE,
+	CMD_SET_DEVICE_NAME,
+	CMD_GET_DEVICE_NAME,
 	CMD_SET_SSID,
 	CMD_GET_SSID,
 	CMD_SET_WPA,
@@ -73,11 +124,13 @@ enum
 	CMD_SET_SERVICE_CB,
 	CMD_SET_CONNECTION_CB,
 	CMD_SET_PEER_FOUND_CB,
+	CMD_SET_DEVICE_NAME_CB,
 	CMD_UNSET_ACTIVATION_CB,
 	CMD_UNSET_DISCOVER_CB,
 	CMD_UNSET_SERVICE_CB,
 	CMD_UNSET_CONNECTION_CB,	
 	CMD_UNSET_PEER_FOUND_CB,
+	CMD_UNSET_DEVICE_NAME_CB,
 	CMD_GET_NETWORK_IF_NAME,
 	CMD_GET_SUBNET_MASK,
 	CMD_GET_GATEWAY_ADDR,	
@@ -87,17 +140,29 @@ enum
 	CMD_GET_SECONDARY_DEVICE_TYPE,	
 	CMD_GET_OPERATING_CHANNEL,
 	CMD_GET_IP_ADDR,
-	CMD_REGISTER_LOCAL_SERVICE,
-	CMD_DEREGISTER_LOCAL_SERVICE,
+	CMD_REGISTER_SERVICE,
+	CMD_DEREGISTER_SERVICE,
 	CMD_START_SERVICE_DISCOVERY,
 	CMD_CANCEL_SERVICE_DISCOVERY,
 	
 	CMD_INCREASE_OEM_LOGLEVEL,
 	CMD_DECREASE_OEM_LOGLEVEL,
 	CMD_DEINITIALIZE,
-	CMD_WFDS_DEREGISTER,
 	CMD_INIT_MIRACAST,
 	CMD_GET_PEER_INFO,
+	CMD_SET_PASSPHRASE,
+	CMD_GET_PASSPHRASE,
+	CMD_SET_AUTOCONNECTION_PEER,
+
+	CMD_INIT_DISPLAY,
+	CMD_DEINIT_DISPLAY,
+	CMD_SET_DISPLAY,
+	CMD_SET_DISPLAY_AVAILABILITY,
+	CMD_GET_PEER_DISPLAY_TYPE,
+	CMD_GET_PEER_DISPLAY_AVAILABILITY,
+	CMD_GET_PEER_DISPLAY_HDCP,
+	CMD_GET_PEER_DISPLAY_PORT,
+	CMD_GET_PEER_DISPLAY_THROUGHPUT,
 
 	CMD_INVALID = 255,
 };
@@ -125,6 +190,7 @@ menu_str_t g_menu_str[] =
 
 		{ CMD_GET_LINK_STATUS, "CMD_GET_LINK_STATUS" },
 		{ CMD_CONNECT_PEER, "CMD_CONNECT_PEER" },
+		{ CMD_CANCEL_CONNECTION, "CMD_CANCEL_CONNECTION" },
 		{ CMD_DISCONNECT_ALL, "CMD_DISCONNECT_ALL" },
 		{ CMD_DISCONNECT, "CMD_DISCONNECT" },
 
@@ -132,8 +198,11 @@ menu_str_t g_menu_str[] =
 
 		{ CMD_CREATE_GROUP, "CMD_CREATE_GROUP" },
 		{ CMD_CANCEL_GROUP, "CMD_CANCEL_GROUP" },
+		{ CMD_IS_GROUP_OWNER, "CMD_IS_GROUP_OWNER" },
 		{ CMD_REJECT, "CMD_REJECT" },
 		{ CMD_INVITE, "CMD_INVITE" },
+		{ CMD_SET_DEVICE_NAME, "CMD_SET_DEVICE_NAME" },
+		{ CMD_GET_DEVICE_NAME, "CMD_GET_DEVICE_NAME" },
 		{ CMD_SET_SSID, "CMD_SET_SSID" },
 		{ CMD_GET_SSID, "CMD_GET_SSID" },
 		{ CMD_SET_WPA, "CMD_SET_WPA" },
@@ -165,6 +234,7 @@ menu_str_t g_menu_str[] =
 		{ CMD_SET_DISCOVER_CB, "CMD_SET_DISCOVER_CB" },
 		{ CMD_SET_CONNECTION_CB, "CMD_SET_CONNECTION_CB" },
 		{ CMD_SET_PEER_FOUND_CB, "CMD_SET_PEER_FOUND_CB" },
+		{ CMD_SET_DEVICE_NAME_CB, "CMD_SET_DEVICE_NAME_CB"},
 		{ CMD_UNSET_ACTIVATION_CB, "CMD_UNSET_ACTIVATION_CB" },
 		{ CMD_UNSET_DISCOVER_CB, "CMD_UNSET_DISCOVER_CB" },
 		{ CMD_UNSET_CONNECTION_CB, "CMD_UNSET_CONNECTION_CB" },
@@ -178,8 +248,8 @@ menu_str_t g_menu_str[] =
 		{ CMD_GET_SECONDARY_DEVICE_TYPE, "CMD_GET_SECONDARY_DEVICE_TYPE" },		
 		{ CMD_GET_OPERATING_CHANNEL, "CMD_GET_OPERATING_CHANNEL" },
 		{ CMD_GET_IP_ADDR, "CMD_GET_IP_ADDR" },
-		{ CMD_REGISTER_LOCAL_SERVICE, "CMD_REGISTER_LOCAL_SERVICE" },
-		{ CMD_DEREGISTER_LOCAL_SERVICE, "CMD_DEREGISTER_LOCAL_SERVICE" },
+		{ CMD_REGISTER_SERVICE, "CMD_REGISTER_SERVICE" },
+		{ CMD_DEREGISTER_SERVICE, "CMD_DEREGISTER_SERVICE" },
 		{ CMD_START_SERVICE_DISCOVERY,"CMD_START_SERVICE_DISCOVERY" },
 		{ CMD_CANCEL_SERVICE_DISCOVERY,"CMD_CANCEL_SERVICE_DISCOVERY" },
 
@@ -187,9 +257,21 @@ menu_str_t g_menu_str[] =
 		{ CMD_DECREASE_OEM_LOGLEVEL, "CMD_DECREASE_OEM_LOGLEVEL" },
 
 		{ CMD_DEINITIALIZE, "CMD_DEINITIALIZE" },
-		{ CMD_WFDS_DEREGISTER, "CMD_WFDS_DEREGISTER" },
 		{ CMD_INIT_MIRACAST, "CMD_INIT_MIRACAST" },
 		{ CMD_GET_PEER_INFO, "CMD_GET_PEER_INFO" },
+		{CMD_SET_PASSPHRASE, "CMD_SET_PASSPHRASE" },
+		{CMD_GET_PASSPHRASE, "CMD_GET_PASSPHRASE" },
+		{CMD_SET_AUTOCONNECTION_PEER, "CMD_SET_AUTOCONNECTION_PEER" },
+
+		{CMD_INIT_DISPLAY, "CMD_INIT_DISPLAY" },
+		{CMD_DEINIT_DISPLAY, "CMD_DEINIT_DISPLAY" },
+		{CMD_SET_DISPLAY, "CMD_SET_DISPLAY" },
+		{CMD_SET_DISPLAY_AVAILABILITY, "CMD_SET_DISPLAY_AVAILABILITY" },
+		{CMD_GET_PEER_DISPLAY_TYPE, "CMD_GET_PEER_DISPLAY_TYPE" },
+		{CMD_GET_PEER_DISPLAY_AVAILABILITY, "CMD_GET_PEER_DISPLAY_AVAILABILITY" },
+		{CMD_GET_PEER_DISPLAY_HDCP, "CMD_GET_PEER_DISPLAY_HDCP" },
+		{CMD_GET_PEER_DISPLAY_PORT, "CMD_GET_PEER_DISPLAY_PORT" },
+		{CMD_GET_PEER_DISPLAY_THROUGHPUT, "CMD_GET_PEER_DISPLAY_THROUGHPUT" },
 
 		{ -1, NULL }, };
 
@@ -293,9 +375,13 @@ void usage_full()
 
 	for (i = 0; g_menu_str[i].cmd != -1; i++)
 	{
-		printf("%d: %s\n", g_menu_str[i].cmd,
+		if(i%4 == 0)
+			printf("\n");
+		printf(" %02d: %-32s ", g_menu_str[i].cmd,
 				cmd_transform(g_menu_str[i].menu_str));
+
 	}
+	printf("\n");
 }
 
 int is_digit(const char* str)
@@ -358,7 +444,7 @@ int select_peer(struct appdata* ad)
 				i,
 				list[i].mac_address,
 				list[i].is_group_owner ? "YES" : "NO",
-						list[i].ssid);
+						list[i].device_name);
 	}
 
 	printf("input peer index:\n");
@@ -392,7 +478,7 @@ void print_peers_connected(struct appdata* ad)
 	for(i=0; i<ad->connected_peer_count; i++)
 	{
 		if (list[i].service_count == 0) {
-			printf ("index [%d] MAC [%s] SSID[%s] \n", i, list[i].mac_address, list[i].ssid);
+			printf ("index [%d] MAC [%s] SSID[%s] \n", i, list[i].mac_address, list[i].device_name);
 		} else {
 			char services[256] = {0,};
 			unsigned int len = 0;
@@ -402,7 +488,7 @@ void print_peers_connected(struct appdata* ad)
 				snprintf(services + len, 256-len, " %s", list[i].service_list[j]);
 				len = len + strlen(list[i].service_list[j]) + 1;
 			}
-			printf ("index [%d] MAC [%s] SSID[%s] Services=[%s]\n", i, list[i].mac_address, list[i].ssid, services);
+			printf ("index [%d] MAC [%s] SSID[%s] Services=[%s]\n", i, list[i].mac_address, list[i].device_name, services);
 		}
 	}
 
@@ -427,7 +513,7 @@ void print_peers(struct appdata* ad)
 				list[i].mac_address,
 				list[i].is_group_owner ? "YES" : "NO",
 						list[i].is_connected,
-						list[i].ssid,
+						list[i].device_name,
 						list[i].primary_device_type,
 						list[i].secondary_device_type
 			);
@@ -445,7 +531,7 @@ void print_peers(struct appdata* ad)
 				list[i].mac_address,
 				list[i].is_group_owner ? "YES" : "NO",
 						list[i].is_connected,
-						list[i].ssid,
+						list[i].device_name,
 						list[i].primary_device_type,
 						list[i].secondary_device_type,
 						services
@@ -603,7 +689,7 @@ void _cb_peer_found(int error_code, wifi_direct_discovery_state_e discovery_stat
 						peer_info->mac_address,
 						peer_info->is_group_owner ? "YES" : "NO",
 								peer_info->is_connected,
-								peer_info->ssid,
+								peer_info->device_name,
 								peer_info->primary_device_type,
 								peer_info->secondary_device_type
 					);
@@ -653,6 +739,10 @@ void _cb_service(int error_code,
 				printf("Peer service response %s\n", response_data);
 			if (service_type == WIFI_DIRECT_SERVICE_TYPE_ALL)
 				printf("Service type = WIFI_DIRECT_SERVICE_TYPE_ALL\n");
+			else if (service_type == WIFI_DIRECT_SERVICE_TYPE_BONJOUR)
+				printf("Service type = WIFI_DIRECT_SERVICE_TYPE_BONJOUR\n");
+			else if (service_type == WIFI_DIRECT_SERVICE_TYPE_UPNP)
+				printf("Service type = WIFI_DIRECT_SERVICE_TYPE_UPNP\n");
 			else if (service_type == WIFI_DIRECT_SERVICE_TYPE_BT_ADDR)
 				printf("Service type = WIFI_DIRECT_SERVICE_TYPE_BT_ADDR\n");
 			else if (service_type == WIFI_DIRECT_SERVICE_TYPE_CONTACT_INFO)
@@ -668,6 +758,83 @@ void _cb_service(int error_code,
 	__FUNC_EXIT__;
 }
 
+
+bool __handle_pbc_request(const char * mac_address) {
+	printf("Connecting using PBC method.\n");
+
+	char input;
+	printf(MAKE_GREEN"Enter 'y' to connect with [%s]: "RESET_COLOR, mac_address);
+	if(scanf(" %c", &input) < 1) {
+		return -1;
+	}
+	if ('y' == input || 'Y' == input)
+		return true;
+
+	return false;
+}
+
+bool __handle_display_request() {
+	printf("Connecting using DISPLAY method.\n");
+	char *pin = NULL;
+	int rv = wifi_direct_get_wps_pin(&pin);
+	if (WIFI_DIRECT_ERROR_NONE == rv) {
+		printf("WPS PIN = [%s]\n", pin);
+		free(pin);
+		return true;
+	} else
+		printf("wifi_direct_get_wps_pin() is failed : [%s]\n", test_wfd_convert_error_to_string(rv));
+
+	return false;
+}
+
+bool __handle_keypad_request() {
+	printf("Connecting using KEYPAD method.\n");
+
+	char *pin = NULL;
+	printf("Enter WPS PIN [8 digits] : ");
+	if(scanf(" %ms", &pin) < 1)
+		return -1;
+
+	int len = strlen(pin);
+	if (len != 8) {
+		if (len > 8)
+			printf("Password Too Long\n");
+		else
+			printf("Password Too Short\n");
+		free(pin);
+		return false;
+	}
+	int rv = wifi_direct_set_wps_pin(pin);
+	free(pin);
+	if(WIFI_DIRECT_ERROR_NONE == rv) {
+		return true;
+	} else {
+		printf("wifi_direct_set_wps_pin() is failed : [%s]\n", test_wfd_convert_error_to_string(rv));
+	}
+	return false;
+}
+
+int __user_accept_connection(bool accept_connection,const char * mac_address) {
+	int rv = 0;
+	if(accept_connection) {
+		rv = wifi_direct_accept_connection(mac_address); /* accepting incoming connection */
+		if(WIFI_DIRECT_ERROR_NONE ==  rv) {
+			printf("Connection accepted for [%s]\n",mac_address);
+		} else {
+			printf("wifi_direct_accept_connection failed [%s].\n", test_wfd_convert_error_to_string(rv));
+		}
+	} else {
+		rv = wifi_direct_reject_connection(mac_address);
+		if(WIFI_DIRECT_ERROR_NONE == rv) {
+			printf("Connection rejected for [%s]\n",mac_address);
+		} else {
+			printf("wifi_direct_reject_connection failed [%s].\n", test_wfd_convert_error_to_string(rv));
+			printf("Rejected incoming connection using timeout!!!\n");
+		}
+	}
+	return 0;
+}
+
 void _cb_connection(int error_code, wifi_direct_connection_state_e connection_state, const char* mac_address, void *user_data)
 {
 	__FUNC_ENTER__;
@@ -675,6 +842,8 @@ void _cb_connection(int error_code, wifi_direct_connection_state_e connection_st
 	{ 0, };
 	char *ip_addr = NULL;
 	bool owner;
+	bool accept_connection = false;
+	int rv = 0;
 
 	switch (connection_state)
 	{
@@ -754,168 +923,49 @@ void _cb_connection(int error_code, wifi_direct_connection_state_e connection_st
 	break;
 
 	case WIFI_DIRECT_CONNECTION_WPS_REQ:
-	{
-		event_printf("event - WIFI_DIRECT_CONNECTION_WPS_REQ\n");
-
+	{	/* outgoing requests */
 		wifi_direct_wps_type_e wps_mode;
-		
-		int result;
 
-		result = wifi_direct_get_local_wps_type(&wps_mode);
-		printf("wifi_direct_get__local_wps_type() result=[%d]\n", result);
-
-		//BCMP2P_DISCOVER_ENTRY notification_data;
-		//memcpy(&notification_data, pNotificationData, sizeof(notification_data));
-		if ( wps_mode == WIFI_DIRECT_WPS_TYPE_PBC)
-		{
-			printf("wps_config is WIFI_DIRECT_WPS_TYPE_PBC\n");
-
-		}
-		else if ( wps_mode == WIFI_DIRECT_WPS_TYPE_PIN_DISPLAY)
-		{
-			printf("wps_config is WIFI_DIRECT_WPS_TYPE_PIN_DISPLAY\n");
-
-			int num;
-			char pin[9]= { 0, };
-			int result;
-
-			struct appdata *ad = (struct appdata *) user_data;
-
-			if (NULL == ad)
-				printf("ERROR : ad is NULL!!!\n");
-
-			memset(pin, 0x00, sizeof(pin));
-			printf("Input 8 digit PIN number :\n");
-			scanf("%s", pin);
-
-			if( strlen(pin) > 0 )
-				result = wifi_direct_set_wps_pin(pin);
+		rv = wifi_direct_get_local_wps_type(&wps_mode);
+		if (WIFI_DIRECT_ERROR_NONE !=  rv) {
+			printf("FAILED READING WPS TYPE!!!\n");
+			accept_connection = false;
+			break;
+		} else {
+			if(wps_mode == WIFI_DIRECT_WPS_TYPE_PBC)
+				accept_connection = __handle_pbc_request(mac_address);
+			else if(wps_mode == WIFI_DIRECT_WPS_TYPE_PIN_DISPLAY)
+				accept_connection = __handle_display_request();
+			else if(wps_mode == WIFI_DIRECT_WPS_TYPE_PIN_KEYPAD)
+				accept_connection = __handle_keypad_request();
 			else
-				printf("Invalid PIN number\n");
-
-			if ( result == WIFI_DIRECT_ERROR_NONE )
-			{
-				int i = ad->selected_peer_index;
-				wifi_direct_discovered_peer_info_s* list = ad->peer_list;
-
-				result = wifi_direct_accept_connection(list[i].mac_address);
-				printf("wifi_direct_accept_connection() result=[%d]\n", result);
-			}
-			else
-				printf("wifi_direct_set_wps_pin Error [%d]\n", result);
-
-		}
-		else if ( wps_mode == WIFI_DIRECT_WPS_TYPE_PIN_KEYPAD )
-		{
-			printf("wps_config is WIFI_DIRECT_WPS_TYPE_PIN_KEYPAD\n");
-			char *pin = NULL;
-
-			result = wifi_direct_get_wps_pin(&pin);
-			printf("wifi_direct_get_wps_pin() result=[%d]\n", result);
-			if ( NULL != pin )
-			{
-				printf("WPS_PIN [%s]\n", pin);
-				free(pin);
-			}
-			else
-				printf("WPS_PIN is NULL !! \n");
-		}
-		else
-		{
-			printf("wps_config is unkown!\n");
+				accept_connection = false;
 		}
 
+		if(wps_mode != WIFI_DIRECT_WPS_TYPE_PIN_DISPLAY)
+			__user_accept_connection(accept_connection, mac_address);
 	}
 	break;
-
 	case WIFI_DIRECT_CONNECTION_REQ:
-	{
-		event_printf("event - WIFI_DIRECT_CONNECTION_REQ\n");
-		char incomming_peer_mac[18];
+	{	/* incoming requests */
 		wifi_direct_wps_type_e wps_mode;
-		bool auto_connection_mode;
-		int result;
 
-		memset(incomming_peer_mac, 0, sizeof(incomming_peer_mac));
-		
-		if(NULL != mac_address)
-			strncpy(incomming_peer_mac, mac_address, strlen(mac_address));
-
-		printf ("Connection Request from [%s] \n", incomming_peer_mac);
-
-		result = wifi_direct_get_local_wps_type(&wps_mode);
-		printf("wifi_direct_get_local_wps_type() result=[%d]\n", result);
-
-		result = wifi_direct_is_autoconnection_mode(&auto_connection_mode);
-		printf("wifi_direct_is_autoconnection_mode() result=[%d]\n", result);
-
-		if(auto_connection_mode == TRUE)
-		{
-		
-			result = wifi_direct_accept_connection(incomming_peer_mac);
-			printf("wifi_direct_accept_connection() result=[%d]\n", result);
-		}
-		else
-		{
-		
-			if ( wps_mode == WIFI_DIRECT_WPS_TYPE_PBC)
-			{
-				char pushbutton;
-				printf("wps_config is WIFI_DIRECT_WPS_TYPE_PBC\n");
-				printf("************\n");
-				printf("Connect? (Y/N)\n");
-				printf("*************\n");
-				
-				scanf("%c", &pushbutton);
-
-				if( (pushbutton == 'Y') || (pushbutton == 'y') )
-				{
-					result = wifi_direct_accept_connection(incomming_peer_mac);
-					printf("wifi_direct_accept_connection() result=[%d]\n", result);
-				}
-			}
-			else if ( wps_mode == WIFI_DIRECT_WPS_TYPE_PIN_DISPLAY)
-			{
-				printf("wps_config is WIFI_DIRECT_WPS_TYPE_PIN_DISPLAY\n");
-				
-				result = wifi_direct_generate_wps_pin();
-				printf("wifi_direct_generate_wps_pin() result=[%d]\n", result);
-			}
-			else if ( wps_mode == WIFI_DIRECT_WPS_TYPE_PIN_KEYPAD )
-			{
-				printf("wps_config is WIFI_DIRECT_WPS_TYPE_PIN_KEYPAD\n");
-
-				char pin[9]= { 0, };
-
-				memset(pin, 0x00, sizeof(pin));
-				printf("*********************\n");
-				printf("Input 8 digit PIN number :\n");
-				printf("*********************\n");
-				scanf("%s", pin);
-
-				if( strlen(pin) > 0 )
-					result = wifi_direct_set_wps_pin(pin);
-				else
-					printf("Invalid PIN number\n");
-
-
-				if ( result == WIFI_DIRECT_ERROR_NONE )
-				{
-					result = wifi_direct_accept_connection(incomming_peer_mac);
-					printf("wifi_direct_accept_connection() result=[%d]\n", result);
-				}
-				else
-					printf("wifi_direct_set_wps_pin Error [%d]\n", result);
-				
-			}
+		rv = wifi_direct_get_local_wps_type(&wps_mode);
+		if (WIFI_DIRECT_ERROR_NONE !=  rv) {
+			printf("FAILED READING WPS TYPE!!!\n");
+			accept_connection = false;
+			break;
+		} else {
+			if(wps_mode == WIFI_DIRECT_WPS_TYPE_PBC)
+				accept_connection = __handle_pbc_request(mac_address);
+			else if(wps_mode == WIFI_DIRECT_WPS_TYPE_PIN_DISPLAY)
+				accept_connection = __handle_display_request();
+			else if(wps_mode == WIFI_DIRECT_WPS_TYPE_PIN_KEYPAD)
+				accept_connection = __handle_keypad_request();
 			else
-			{
-				printf("wps_config is unkown!\n");
-			}
+				accept_connection = false;
 		}
-		
-
-				
+		__user_accept_connection(accept_connection, mac_address);
 	}
 	break;
 	
@@ -959,7 +1009,6 @@ void _cb_connection(int error_code, wifi_direct_connection_state_e connection_st
 
 	case WIFI_DIRECT_DISASSOCIATION_IND:
 	{
-
 		event_printf("event - WIFI_DIRECT_DISASSOCIATION_IND\n");
 	
 		if ( error_code == WIFI_DIRECT_ERROR_NONE )
@@ -1306,7 +1355,7 @@ void process_input(const char *input, gpointer user_data)
 						i,
 						list[i].mac_address,
 						list[i].is_group_owner ? "YES" : "NO",
-								list[i].ssid);
+								list[i].device_name);
 
 				printf("wifi_direct_accept_connection() result=[%d]\n", result);
 			}
@@ -1316,21 +1365,8 @@ void process_input(const char *input, gpointer user_data)
 	case CMD_DISCONNECT_ALL:
 		if (ad != NULL)
 		{
-			if (select_peer(ad))
-			{
-				int i = ad->selected_peer_index;
-				wifi_direct_discovered_peer_info_s* list = ad->peer_list;
-
-				result = wifi_direct_disconnect_all();
-
-				printf ("Disconnecting... peer-index[%d] MAC [%s] Owner=[%s] SSID[%s]\n",
-						i,
-						list[i].mac_address,
-						list[i].is_group_owner ? "YES" : "NO",
-								list[i].ssid);
-
-				printf("wifi_direct_disconnect_all() result=[%d]\n", result);
-			}
+			result = wifi_direct_disconnect_all();
+			printf("wifi_direct_disconnect_all() result=[%d]\n", result);
 		}
 		break;
 
@@ -1347,7 +1383,7 @@ void process_input(const char *input, gpointer user_data)
 				printf ("Disconnecting... peer-index[%d] MAC [%s] SSID[%s]\n",
 						i,
 						list[i].mac_address,
-						list[i].ssid);
+						list[i].device_name);
 
 				printf("wifi_direct_disconnect() result=[%d]\n", result);
 			}
@@ -1376,7 +1412,6 @@ void process_input(const char *input, gpointer user_data)
 
 				if( wps_mode == WIFI_DIRECT_WPS_TYPE_PIN_KEYPAD )
 				{
-					result = wifi_direct_generate_wps_pin();
 					printf("wifi_direct_generate_wps_pin() result=[%d]\n", result);
 				}
 
@@ -1389,10 +1424,24 @@ void process_input(const char *input, gpointer user_data)
 						i,
 						list[i].mac_address,
 						list[i].is_group_owner ? "YES" : "NO",
-								list[i].ssid);
+								list[i].device_name);
 
 				printf("wifi_direct_connect() result=[%d]\n", result);
 				
+			}
+		}
+		break;
+
+	case CMD_CANCEL_CONNECTION:
+		if (ad != NULL)
+		{
+			if (select_peer(ad))
+			{
+				int i = ad->selected_peer_index;
+				wifi_direct_discovered_peer_info_s* list = ad->peer_list;
+
+				result = wifi_direct_cancel_connection(list[i].mac_address);
+				printf("wifi_direct_cancel_connection() result=[%d]\n", result);
 			}
 		}
 		break;
@@ -1420,6 +1469,14 @@ void process_input(const char *input, gpointer user_data)
 		}
 		break;
 
+	case CMD_IS_GROUP_OWNER:
+		if (ad != NULL)
+		{
+			bool is_group_owner;
+			result = wifi_direct_is_group_owner(&is_group_owner);
+			printf("wifi_direct_is_group_owner() is GO[%d] result=[%d]\n", is_group_owner, result);
+		}
+		break;
 	case CMD_REJECT:
 		if (ad != NULL)
 		{
@@ -1436,38 +1493,49 @@ void process_input(const char *input, gpointer user_data)
 		}
 		break;
 
-	case CMD_SET_SSID:
+	case CMD_SET_DEVICE_NAME:
+	{
 		if (ad != NULL)
 		{
-			char ssid[11] = {0,};
-			printf("Input new SSID:\n");
-			scanf("%s",ssid);
-			printf("New ssid: [%s]\n", ssid);
+			char device_name[32 + 1];
 
-			if (strlen(ssid) > 0)
-			{
-				result = wifi_direct_set_ssid(ssid);
-				printf("wifi_direct_set_ssid() result=[%d]\n", result);
+			memset(device_name, 0, sizeof(device_name));
+			printf("Input device name :\n");
+			scanf("%s",device_name);
 
-				if(result == WIFI_DIRECT_ERROR_NONE)
-				{
-					result = wifi_direct_cancel_discovery();
-					printf("wifi_direct_cancel_discovery() result=[%d]\n", result);
-				}
-
-				if(result == WIFI_DIRECT_ERROR_NONE)
-				{
-					result = wifi_direct_start_discovery(FALSE, 1000);
-					printf("wifi_direct_start_discovery() result=[%d]\n", result);
-				}
-			}
+			if (strlen(device_name) <= 0)
+				printf("invalid device name !!\n");
 			else
+				printf("device_name: [%s]\n", device_name);
+
+
+			if ((strlen(device_name) > 0))
 			{
-				printf("Invalid SSID !!\n");
+				result = wifi_direct_set_device_name(device_name);
+				printf("wifi_direct_set_device_name() ret=[%d]\n", result);
+			}
+		}
+	}
+	break;
+
+	case CMD_GET_DEVICE_NAME:
+	{
+		if (ad != NULL)
+		{
+			char* device_name = NULL;
+
+			result = wifi_direct_get_device_name(&device_name);
+ 			printf("wifi_direct_get_device_name() result=[%d]\n", result);
+
+			if (NULL != device_name)
+			{
+				printf("ssid: [%s]\n", device_name);
+				free(device_name);
 			}
 
 		}
-		break;
+	}
+	break;
 
 	case CMD_GET_SSID:
 	{
@@ -1487,27 +1555,6 @@ void process_input(const char *input, gpointer user_data)
 		}
 	}
 	break;
-
-	case CMD_SET_WPA:
-		if (ad != NULL)
-		{
-			char new_wpa[64+1] = {0,};
-			printf("Input new WPA:\n");
-			scanf("%s",new_wpa);
-			printf("New wpa: [%s]\n", new_wpa);
-
-			if (strlen(new_wpa) > 0)
-			{
-				result = wifi_direct_set_wpa_passphrase(new_wpa);
-				printf("wifi_direct_set_wpa_passphrase() result=[%d]\n", result);
-			}
-			else
-			{
-				printf("Invalid WPA !!\n");
-			}
-		}
-		break;
-
 
 	case CMD_SET_CHANNEL:
 		if (ad != NULL)
@@ -1822,8 +1869,13 @@ void process_input(const char *input, gpointer user_data)
 	case CMD_GET_SUPPORTED_WPS_MODE:
 		if (ad != NULL)
 		{
+			int supported_wps_mode = 0;
+
 			result = wifi_direct_foreach_supported_wps_types(_cb_foreach_supported_wps_impl, NULL);
 			printf("wifi_direct_foreach_supported_wps_types() result=[%d]\n", result);
+
+			result = wifi_direct_get_supported_wps_mode (&supported_wps_mode);
+			printf("wifi_direct_foreach_supported_wps_types() supported=[%d] result=[%d]\n", supported_wps_mode, result);
 		}
 		break;
 
@@ -1834,7 +1886,7 @@ void process_input(const char *input, gpointer user_data)
 			wifi_direct_wps_type_e wps_mode;
 			int input;
 
-			result = wifi_direct_get_local_wps_type(&wps_mode);
+			result = wifi_direct_get_req_wps_type(&wps_mode);
 			switch(wps_mode)
 			{
 				case WIFI_DIRECT_WPS_TYPE_PBC :
@@ -1882,7 +1934,7 @@ void process_input(const char *input, gpointer user_data)
 		if (ad != NULL)
 		{
 			wifi_direct_wps_type_e wps_mode;
-			result = wifi_direct_get_local_wps_type(&wps_mode);
+			result = wifi_direct_get_req_wps_type(&wps_mode);
 			printf("wifi_direct_get_wps_type() wps_mode=[%d], result=[%d]\n", wps_mode, result);
 			switch(wps_mode)
 			{
@@ -2081,7 +2133,7 @@ void process_input(const char *input, gpointer user_data)
 		{
 			int operating_channel;
 
-//			result = wifi_direct_get_own_group_channel(&operating_channel);
+			result = wifi_direct_get_operating_channel(&operating_channel);
 
 			printf("wifi_direct_get_own_group_channel() result=[%d]\n", result);
 			printf("Operating Channel [%d]\n", operating_channel);
@@ -2118,46 +2170,21 @@ void process_input(const char *input, gpointer user_data)
 		wifi_direct_set_p2poem_loglevel(0);
 		break;
 
-	case CMD_WFDS_DEREGISTER:
-	{
-		if (ad != NULL)
-		{
-			unsigned int service_type;
-			printf("Input service type:\n");
-			printf("1.  WIFI_DIRECT_WFDS_SERVICE_TYPE_SEEK\n");
-			printf("2.  WIFI_DIRECT_WFDS_SERVICE_TYPE_ADVERTISE\n");
-			scanf("%d", &service_type);
-			if (service_type == 1) {
-				result = wifi_direct_deregister_wfds_service(
-					WIFI_DIRECT_WFDS_SERVICE_TYPE_SEEK, "org.wi-fi.wfds.print");
-				printf("wifi_direct_deregister_wfds_service() result=[%d]\n", result);
-				result = wifi_direct_deregister_wfds_service(
-					WIFI_DIRECT_WFDS_SERVICE_TYPE_SEEK, "org.wi-fi.wfds.play");
-				printf("wifi_direct_deregister_wfds_service() result=[%d]\n", result);
-			} else if (service_type == 2) {
-				result = wifi_direct_deregister_wfds_service(
-					WIFI_DIRECT_WFDS_SERVICE_TYPE_ADVERTISE, "org.wi-fi.wfds.print");
-				printf("wifi_direct_deregister_wfds_service() result=[%d]\n", result);
-				result = wifi_direct_deregister_wfds_service(
-					WIFI_DIRECT_WFDS_SERVICE_TYPE_ADVERTISE, "org.wi-fi.wfds.play");
-				printf("wifi_direct_deregister_wfds_service() result=[%d]\n", result);
-			} else {
-				printf("Wrong input\n");
-			}
-		}
-	}
-	break;
-	case CMD_REGISTER_LOCAL_SERVICE:
+	case CMD_REGISTER_SERVICE:
 		if (ad != NULL)
 		{
 			wifi_direct_service_type_e service_type;
 			int input;
+			char info1[50] = {0,};
+			char info2[50] = {0,};
 			char str[50] = {0, };
 
 			printf("Input service type:\n");
 			printf("1.  WIFI_DIRECT_SERVICE_TYPE_ALL\n");
-			printf("2.  WIFI_DIRECT_SERVICE_TYPE_BT_ADDR\n");
-			printf("3.  WIFI_DIRECT_SERVICE_TYPE_CONTACT_INFO\n");
+			printf("2.  WIFI_DIRECT_SERVICE_TYPE_BONJOUR\n");
+			printf("3.  WIFI_DIRECT_SERVICE_TYPE_UPNP\n");
+			printf("4.  WIFI_DIRECT_SERVICE_TYPE_BT_ADDR\n");
+			printf("5.  WIFI_DIRECT_SERVICE_TYPE_CONTACT_INFO\n");
 			scanf("%d", &input);
 			printf("input = %d\n",input);
 
@@ -2167,11 +2194,25 @@ void process_input(const char *input, gpointer user_data)
 					service_type = WIFI_DIRECT_SERVICE_TYPE_ALL;
 				break;
 				case 2 :
-					service_type = WIFI_DIRECT_SERVICE_TYPE_BT_ADDR;
+					service_type = WIFI_DIRECT_SERVICE_TYPE_BONJOUR;
+					printf("Enter info 1\n");
+					scanf("%s", info1);
+					printf("Enter info 2\n");
+					scanf("%s", info2);
 				break;
 				case 3 :
+					service_type = WIFI_DIRECT_SERVICE_TYPE_UPNP;
+					printf("Enter info 1\n");
+					scanf("%s", info1);
+					printf("Enter info 2\n");
+					scanf("%s", info2);
+				break;
+				case 4 :
+					service_type = WIFI_DIRECT_SERVICE_TYPE_BT_ADDR;
+				break;
+				case 5 :
 					service_type = WIFI_DIRECT_SERVICE_TYPE_CONTACT_INFO;
-					printf("Enter contact info");
+					printf("Enter contact info\n");
 					scanf("%s", str);
 				break;
 				default :
@@ -2179,22 +2220,40 @@ void process_input(const char *input, gpointer user_data)
 				break;
 			}
 
-			result = wifi_direct_register_local_service(service_type, str);
-			printf("wifi_direct_register_local_service()  result=[%d]\n",
-				result);
+			result = wifi_direct_register_service(service_type, info1, info2, &input);
+			printf("wifi_direct_register_service()  service id=[%d] result=[%d]\n",
+				input, result);
 		}
 		break;
 
-	case CMD_DEREGISTER_LOCAL_SERVICE:
+	case CMD_DEREGISTER_SERVICE:
 		if (ad != NULL)
 		{
-			wifi_direct_service_type_e service_type;
 			int input;
+
+			printf("Enter service id:\n");
+			scanf("%d", &input);
+
+
+			result = wifi_direct_deregister_service(input);
+			printf("wifi_direct_deregister_service()  result=[%d]\n",
+				result);
+		}
+		break;
+	case CMD_START_SERVICE_DISCOVERY:
+		if (ad != NULL)
+		{
+			int input;
+			wifi_direct_service_type_e service_type;
 
 			printf("Input service type:\n");
 			printf("1.  WIFI_DIRECT_SERVICE_TYPE_ALL\n");
-			printf("2.  WIFI_DIRECT_SERVICE_TYPE_BT_ADDR\n");
+			printf("2.  WIFI_DIRECT_SERVICE_TYPE_BONJOUR\n");
+			printf("3.  WIFI_DIRECT_SERVICE_TYPE_UPNP\n");
+			printf("4.  WIFI_DIRECT_SERVICE_TYPE_BT_ADDR\n");
+			printf("5.  WIFI_DIRECT_SERVICE_TYPE_CONTACT_INFO\n");
 			scanf("%d", &input);
+			printf("input = %d\n",input);
 
 			switch(input)
 			{
@@ -2202,9 +2261,15 @@ void process_input(const char *input, gpointer user_data)
 					service_type = WIFI_DIRECT_SERVICE_TYPE_ALL;
 				break;
 				case 2 :
-					service_type = WIFI_DIRECT_SERVICE_TYPE_BT_ADDR;
+					service_type = WIFI_DIRECT_SERVICE_TYPE_BONJOUR;
 				break;
 				case 3 :
+					service_type = WIFI_DIRECT_SERVICE_TYPE_UPNP;
+				break;
+				case 4 :
+					service_type = WIFI_DIRECT_SERVICE_TYPE_BT_ADDR;
+				break;
+				case 5 :
 					service_type = WIFI_DIRECT_SERVICE_TYPE_CONTACT_INFO;
 				break;
 				default :
@@ -2212,113 +2277,83 @@ void process_input(const char *input, gpointer user_data)
 				break;
 			}
 
-			result = wifi_direct_deregister_local_service(service_type);
-			printf("wifi_direct_deregister_local_service()  result=[%d]\n",
-				result);
-		}
-		break;
-
-	case CMD_START_SERVICE_DISCOVERY:
-		if (ad != NULL)
-		{
 			if (select_peer(ad))
 			{
+
+				result = wifi_direct_start_service_discovery(
+					NULL, service_type);
+
+				printf ("Service Discovery... broadcast service type[%d]\n",
+					service_type);
+			} else {
 				int i = ad->selected_peer_index;
 				wifi_direct_discovered_peer_info_s* list = ad->peer_list;
-				wifi_direct_service_type_e service_type;
-				int input;
 
-				printf("Input service type:\n");
-				printf("1.  WIFI_DIRECT_SERVICE_TYPE_ALL\n");
-				printf("2.  WIFI_DIRECT_SERVICE_TYPE_BT_ADDR unicast\n");
-				printf("3.  WIFI_DIRECT_SERVICE_TYPE_BT_ADDR broadcast\n");
-				printf("4.  WIFI_DIRECT_SERVICE_TYPE_CONTACT_INFO \n");
-				scanf("%d", &input);
+				result = wifi_direct_start_service_discovery(
+					list[i].mac_address, service_type);
 
-				switch(input)
-				{
-					case 1 :
-						service_type = WIFI_DIRECT_SERVICE_TYPE_ALL;
-						break;
-					case 2 :
-					case 3 :
-						service_type = WIFI_DIRECT_SERVICE_TYPE_BT_ADDR;
-						break;
-					case 4 :
-						service_type = WIFI_DIRECT_SERVICE_TYPE_CONTACT_INFO;
-						break;
-					default :
-						printf("ERROR : Invalid input service_type!!!\n");
-						break;
-				}
-
-				if (3 == input) {
-					result = wifi_direct_start_service_discovery(
-						NULL, service_type);
-
-					printf ("Service Discovery... broadcast service type[%d]\n",
-						service_type);
-				} else {
-					result = wifi_direct_start_service_discovery(
-						list[i].mac_address, service_type);
-
-					printf ("Service Discovery... peer-index[%d] MAC [%s] service type[%d]\n",
-							i,list[i].mac_address, service_type);
-				}
-				printf("wifi_direct_start_service_discovery() result=[%d]\n", result);
+				printf ("Service Discovery... peer-index[%d] MAC [%s] service type[%d]\n",
+						i,list[i].mac_address, service_type);
 			}
+
+			printf("wifi_direct_start_service_discovery() result=[%d]\n", result);
+
 		}
 		break;
 
 	case CMD_CANCEL_SERVICE_DISCOVERY:
 		if (ad != NULL)
 		{
+			int input;
+			wifi_direct_service_type_e service_type;
+
+			printf("Input service ID:\n");
+
+			scanf("%d", &input);
+			printf("input = %d\n",input);
+
+			switch(input)
+			{
+				case 1 :
+					service_type = WIFI_DIRECT_SERVICE_TYPE_ALL;
+				break;
+				case 2 :
+					service_type = WIFI_DIRECT_SERVICE_TYPE_BONJOUR;
+				break;
+				case 3 :
+					service_type = WIFI_DIRECT_SERVICE_TYPE_UPNP;
+				break;
+				case 4 :
+					service_type = WIFI_DIRECT_SERVICE_TYPE_BT_ADDR;
+				break;
+				case 5 :
+					service_type = WIFI_DIRECT_SERVICE_TYPE_CONTACT_INFO;
+				break;
+				default :
+					printf("ERROR : Invalid input service_type!!!\n");
+				break;
+			}
+
 			if (select_peer(ad))
 			{
+
+
+				result = wifi_direct_cancel_service_discovery(
+					NULL, service_type);
+
+				printf ("Service Discovery... broadcast service type[%d]\n",
+					service_type);
+			} else {
 				int i = ad->selected_peer_index;
 				wifi_direct_discovered_peer_info_s* list = ad->peer_list;
-				wifi_direct_service_type_e service_type;
-				int input;
 
-				printf("Input service type:\n");
-				printf("1.  WIFI_DIRECT_SERVICE_TYPE_ALL\n");
-				printf("2.  WIFI_DIRECT_SERVICE_TYPE_BT_ADDR unicast\n");
-				printf("3.  WIFI_DIRECT_SERVICE_TYPE_BT_ADDR broadcast\n");
-				printf("4.  WIFI_DIRECT_SERVICE_TYPE_CONTACT_INFO\n");
-				scanf("%d", &input);
+				result = wifi_direct_cancel_service_discovery(
+					list[i].mac_address, service_type);
 
-				switch(input)
-				{
-					case 1 :
-						service_type = WIFI_DIRECT_SERVICE_TYPE_ALL;
-						break;
-					case 2 :
-					case 3:
-						service_type = WIFI_DIRECT_SERVICE_TYPE_BT_ADDR;
-						break;
-					case 4 :
-						service_type = WIFI_DIRECT_SERVICE_TYPE_CONTACT_INFO;
-						break;
-					default :
-						printf("ERROR : Invalid input service_type!!!\n");
-						break;
-				}
-
-				if (3 == input) {
-					result = wifi_direct_cancel_service_discovery(
-						NULL, service_type);
-
-					printf ("Service Discovery... broadcast service type[%d]\n",
-						service_type);
-				} else {
-					result = wifi_direct_cancel_service_discovery(
-						list[i].mac_address, service_type);
-
-					printf ("Service Discovery... peer-index[%d] MAC [%s] service type[%d]\n",
-							i,list[i].mac_address, service_type);
-				}
-				printf("wifi_direct_cancel_service_discovery() result=[%d]\n", result);
+				printf ("Service Discovery... peer-index[%d] MAC [%s] service type[%d]\n",
+						i,list[i].mac_address, service_type);
 			}
+			printf("wifi_direct_cancel_service_discovery() result=[%d]\n", result);
 		}
 		break;
 
@@ -2358,7 +2393,7 @@ void process_input(const char *input, gpointer user_data)
 						peer_info->mac_address,
 						peer_info->is_group_owner ? "YES" : "NO",
 								peer_info->is_connected,
-								peer_info->ssid,
+								peer_info->device_name,
 								peer_info->primary_device_type,
 								peer_info->secondary_device_type
 					);
@@ -2372,6 +2407,237 @@ void process_input(const char *input, gpointer user_data)
 
 				printf("wifi_direct_get_peer() result=[%d]\n", result);
 			}
+		break;
+	case CMD_SET_PASSPHRASE:
+	{
+		if (ad != NULL)
+		{
+			char passphrase[64] = {0, };
+
+			printf("Input passphrase :\n");
+			scanf(" %64[^\n]s", passphrase);
+
+			if (strlen(passphrase) > 0) {
+				printf("passphrase: [%s]\n", passphrase);
+				result = wifi_direct_set_passphrase(passphrase);
+				printf("wifi_direct_set_passphrase() ret=[%d]\n", result);
+			} else
+				printf("invalid passphrase !!\n");
+		}
+	}
+	break;
+	case CMD_GET_PASSPHRASE:
+	{
+		if (ad != NULL)
+		{
+			char* passphrase = NULL;
+
+			result = wifi_direct_get_passphrase(&passphrase);
+ 			printf("wifi_direct_get_passphrase() result=[%d]\n", result);
+
+			if (NULL != passphrase)
+			{
+				printf("passphrase: [%s]\n", passphrase);
+				free(passphrase);
+			}
+
+		}
+	}
+	break;
+	case CMD_SET_AUTOCONNECTION_PEER:
+		if (ad != NULL)
+		{
+			char * mac_address = NULL;
+			printf("\nEnter Mac_address: ");
+			if(scanf(" %ms", &mac_address) < 1)
+				break;
+
+			if (strlen(mac_address) > 23)
+			{
+				printf("\nWrong Mac_address");
+			}
+			else {
+
+				int rv = wifi_direct_set_autoconnection_peer(mac_address);
+
+				if (rv == WIFI_DIRECT_ERROR_NONE)
+				{
+					free(mac_address);
+					printf(MAKE_GREEN"SUCCESS %s"RESET_COLOR"\n",__func__);
+					break;
+				}
+				printf(MAKE_RED"FAILED %s : %s"RESET_COLOR"\n",__func__,test_wfd_convert_error_to_string(rv));
+			}
+
+			free(mac_address);
+		}
+		break;
+	case CMD_INIT_DISPLAY:
+	{
+		if (ad != NULL)
+		{
+			result = wifi_direct_init_display();
+			printf("wifi_direct_init_display() result=[%d]\n", result);
+		}
+	}
+	break;
+	case CMD_DEINIT_DISPLAY:
+	{
+		if (ad != NULL)
+		{
+			result = wifi_direct_deinit_display();
+			printf("wifi_direct_deinit_display() result=[%d]\n", result);
+		}
+	}
+	break;
+	case CMD_SET_DISPLAY:
+	{
+		if (ad != NULL)
+		{
+			int rv = WIFI_DIRECT_ERROR_NONE;
+			int use_default = 0;
+
+			printf("Press [0] For Setting Default Values\n");
+			if(scanf(" %d",&use_default) < 1) {
+				break;
+			}
+
+			if(use_default == 0) {
+				rv = wifi_direct_set_display(WIFI_DIRECT_DISPLAY_TYPE_SOURCE, 7236, 1);
+			} else {
+				int display_type = 0;
+				int port_number = 0;
+				int hdcp = 0;
+
+				printf("DISPLAY_TYPE----->\n");
+				printf("(0) for WIFI_DISPLAY_TYPE_SOURCE,\n");
+				printf("(1) for WIFI_DISPLAY_TYPE_PRIMARY_SINK,\n");
+				printf("(2) for WIFI_DISPLAY_TYPE_SECONDARY_SINK,\n");
+				printf("(3) WIFI_DISPLAY_TYPE_DUAL_ROLE\n");
+				printf("Please Enter DISPLAY_TYPE -----> ");
+				if(scanf(" %d",&display_type) < 1) {
+					break;
+				}
+
+				printf("Please Enter PORT NUMBER  -----> ");
+				if(scanf(" %d",&port_number) < 1) {
+					break;
+				}
+				printf("Please Enter HDCP         -----> ");
+				if(scanf(" %d",&hdcp) < 1) {
+					break;
+				}
+
+				rv = wifi_direct_set_display(display_type, port_number, hdcp);
+			}
+
+			if(rv == WIFI_DIRECT_ERROR_NONE) {
+				printf(MAKE_GREEN"Success %s : %s"RESET_COLOR"\n",__func__,test_wfd_convert_error_to_string(rv));
+				break;
+			}
+
+			printf(MAKE_RED"FAILED %s : %s"RESET_COLOR"\n",__func__,test_wfd_convert_error_to_string(rv));
+			break;
+		}
+	}
+	break;
+	case CMD_SET_DISPLAY_AVAILABILITY:
+	{
+		if (ad != NULL)
+		{
+			int availability = 0;
+
+			printf("Enter Wi-Fi Display availability : ");
+			if(scanf(" %d", &availability) < 0) {
+				break;
+			}
+
+			int rv = wifi_direct_set_display_availability(availability);
+			if (WIFI_DIRECT_ERROR_NONE == rv)
+			{
+				printf(MAKE_GREEN"Set Wi-Fi Display availability Successfull"RESET_COLOR"\n");
+				break;
+			}
+			printf(MAKE_RED"Set Wi-Fi Display availability : %s ",test_wfd_convert_error_to_string(rv));
+			printf(RESET_COLOR"\n");
+			break;
+		}
+	}
+	break;
+	case CMD_GET_PEER_DISPLAY_TYPE:
+		if (ad != NULL)
+		{
+			if (select_peer(ad))
+			{
+				int i = ad->selected_peer_index;
+				int type;
+				wifi_direct_discovered_peer_info_s* list = ad->peer_list;
+
+				result = wifi_direct_get_peer_display_type(list[i].mac_address, &type);
+
+				printf("wifi_direct_get_peer_display_type() result=[%d]\n", type);
+			}
+		}
+		break;
+	case CMD_GET_PEER_DISPLAY_AVAILABILITY:
+		if (ad != NULL)
+		{
+			if (select_peer(ad))
+			{
+				int i = ad->selected_peer_index;
+				int availability;
+				wifi_direct_discovered_peer_info_s* list = ad->peer_list;
+
+				result = wifi_direct_get_peer_display_availability(list[i].mac_address, &availability);
+
+				printf("wifi_direct_get_peer_display_availability() result=[%d]\n", availability);
+			}
+		}
+		break;
+	case CMD_GET_PEER_DISPLAY_HDCP:
+		if (ad != NULL)
+		{
+			if (select_peer(ad))
+			{
+				int i = ad->selected_peer_index;
+				int hdcp;
+				wifi_direct_discovered_peer_info_s* list = ad->peer_list;
+
+				result = wifi_direct_get_peer_display_hdcp(list[i].mac_address, &hdcp);
+
+				printf("wifi_direct_get_peer_display_hdcp() result=[%d]\n", hdcp);
+			}
+		}
+		break;
+	case CMD_GET_PEER_DISPLAY_PORT:
+		if (ad != NULL)
+		{
+			if (select_peer(ad))
+			{
+				int i = ad->selected_peer_index;
+				int port;
+				wifi_direct_discovered_peer_info_s* list = ad->peer_list;
+
+				result = wifi_direct_get_peer_display_port(list[i].mac_address, &port);
+
+				printf("wifi_direct_get_peer_display_port() result=[%d]\n", port);
+			}
+		}
+		break;
+	case CMD_GET_PEER_DISPLAY_THROUGHPUT:
+		if (ad != NULL)
+		{
+			if (select_peer(ad))
+			{
+				int i = ad->selected_peer_index;
+				int tput;
+				wifi_direct_discovered_peer_info_s* list = ad->peer_list;
+
+				result = wifi_direct_get_peer_display_throughput(list[i].mac_address, &tput);
+
+				printf("wifi_direct_get_peer_display_throughput() result=[%d]\n", tput);
+			}
+		}
 		break;
 
 	case CMD_FULL_MENU:
